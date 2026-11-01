@@ -1,0 +1,246 @@
+""" University Budget Tracking System A menu-driven Python OOP application with JSON persistence and CSV export. Run: python budget_tracking_system.py """
+
+from dataclasses import dataclass, asdict
+from datetime import datetime
+from pathlib import Path
+import csv
+import json
+from typing import Optional
+
+DATA_FILE = Path("budget_data.json")
+EXPORT_FILE = Path("transactions_export.csv")
+
+
+@dataclass
+class Department:
+    department_id: str
+    name: str
+    allocated_budget: float
+
+
+@dataclass
+class Transaction:
+    transaction_id: str
+    department_id: str
+    amount: float
+    transaction_type: str  # "credit" or "debit"
+    description: str
+    timestamp: str
+
+
+class BudgetTrackingSystem:
+    def __init__(self):
+        self.departments: dict[str, Department] = {}
+        self.transactions: dict[str, Transaction] = {}
+        self.load_data()
+
+    def load_data(self):
+        """Load saved data from JSON when the application starts."""
+        if not DATA_FILE.exists():
+            return
+        try:
+            data = json.loads(DATA_FILE.read_text(encoding="utf-8"))
+            self.departments = {
+                key: Department(**value)
+                for key, value in data.get("departments", {}).items()
+            }
+            self.transactions = {
+                key: Transaction(**value)
+                for key, value in data.get("transactions", {}).items()
+            }
+        except (json.JSONDecodeError, TypeError) as error:
+            print(f"Could not read saved data: {error}")
+
+    def save_data(self):
+        """Persist all departments and transactions to a JSON file."""
+        data = {
+            "departments": {k: asdict(v) for k, v in self.departments.items()},
+            "transactions": {k: asdict(v) for k, v in self.transactions.items()},
+        }
+        DATA_FILE.write_text(json.dumps(data, indent=4), encoding="utf-8")
+
+    def add_department(self, department_id: str, name: str, budget: float):
+        if department_id in self.departments:
+            raise ValueError("Department ID already exists.")
+        if budget < 0:
+            raise ValueError("Budget cannot be negative.")
+        self.departments[department_id] = Department(department_id, name, budget)
+        self.save_data()
+
+    def adjust_department_budget(self, department_id: str, new_budget: float):
+        if department_id not in self.departments:
+            raise ValueError("Department not found.")
+        if new_budget < 0:
+            raise ValueError("Budget cannot be negative.")
+        dept = self.departments[department_id]
+        self.departments[department_id] = Department(
+            dept.department_id, dept.name, new_budget
+        )
+        self.save_data()
+
+    def add_transaction(self, transaction_id: str, department_id: str, amount: float, transaction_type: str, description: str):
+        if transaction_id in self.transactions:
+            raise ValueError("Transaction ID already exists.")
+        if department_id not in self.departments:
+            raise ValueError("Create the department before adding a transaction.")
+        if amount <= 0:
+            raise ValueError("Transaction amount must be greater than zero.")
+        kind = transaction_type.lower()
+        if kind not in {"credit", "debit"}:
+            raise ValueError("Transaction type must be credit or debit.")
+
+        transaction = Transaction(
+            transaction_id=transaction_id,
+            department_id=department_id,
+            amount=amount,
+            transaction_type=kind,
+            description=description,
+            timestamp=datetime.now().isoformat(timespec="seconds"),
+        )
+        self.transactions[transaction_id] = transaction
+        self.save_data()
+
+    def update_transaction(self, transaction_id: str, amount: float, transaction_type: str, description: str):
+        """Update the amount, type and description of an existing transaction."""
+        if transaction_id not in self.transactions:
+            raise ValueError("Transaction not found.")
+        if amount <= 0:
+            raise ValueError("Amount must be greater than zero.")
+        kind = transaction_type.lower()
+        if kind not in {"credit", "debit"}:
+            raise ValueError("Type must be credit or debit.")
+        old = self.transactions[transaction_id]
+        self.transactions[transaction_id] = Transaction(
+            old.transaction_id, old.department_id, amount, kind,
+            description, old.timestamp
+        )
+        self.save_data()
+
+    def delete_transaction(self, transaction_id: str):
+        if transaction_id not in self.transactions:
+            raise ValueError("Transaction not found.")
+        del self.transactions[transaction_id]
+        self.save_data()
+
+    def department_summary(self, department_id: str) -> dict:
+        if department_id not in self.departments:
+            raise ValueError("Department not found.")
+        credit = debit = 0.0
+        for item in self.transactions.values():
+            if item.department_id == department_id:
+                if item.transaction_type == "credit":
+                    credit += item.amount
+                else:
+                    debit += item.amount
+        dept = self.departments[department_id]
+        # Credits are treated as funds received; debits are expenses.
+        available_funds = dept.allocated_budget + credit - debit
+        return {
+            "department": dept.name,
+            "allocated_budget": dept.allocated_budget,
+            "total_credit": credit,
+            "total_debit": debit,
+            "available_funds": available_funds,
+            "budget_utilised_percent": (
+                debit / dept.allocated_budget * 100
+                if dept.allocated_budget else 0
+            ),
+        }
+
+    def financial_overview(self):
+        print("\n========== UNIVERSITY FINANCIAL OVERVIEW ==========")
+        if not self.departments:
+            print("No departments added yet.")
+            return
+        for department_id in self.departments:
+            summary = self.department_summary(department_id)
+            print(f"\n{summary['department']} ({department_id})")
+            print(f"Allocated budget : ₹{summary['allocated_budget']:,.2f}")
+            print(f"Total credit : ₹{summary['total_credit']:,.2f}")
+            print(f"Total debit : ₹{summary['total_debit']:,.2f}")
+            print(f"Available funds : ₹{summary['available_funds']:,.2f}")
+            print(f"Budget utilised : {summary['budget_utilised_percent']:.2f}%")
+
+    def export_transactions_to_csv(self):
+        """Create a CSV file that can be opened in Excel or imported into Power BI."""
+        fields = [
+            "transaction_id", "department_id", "department_name", "amount",
+            "transaction_type", "description", "timestamp"
+        ]
+        with EXPORT_FILE.open("w", newline="", encoding="utf-8") as file:
+            writer = csv.DictWriter(file, fieldnames=fields)
+            writer.writeheader()
+            for item in self.transactions.values():
+                dept = self.departments[item.department_id]
+                writer.writerow({
+                    **asdict(item),
+                    "department_name": dept.name
+                })
+        print(f"Exported {len(self.transactions)} transactions to {EXPORT_FILE}")
+
+
+def read_amount(prompt: str) -> float:
+    try:
+        value = float(input(prompt))
+        if value < 0:
+            raise ValueError
+        return value
+    except ValueError:
+        raise ValueError("Enter a valid non-negative number.")
+
+
+def main():
+    app = BudgetTrackingSystem()
+    menu = """ ===== UNIVERSITY BUDGET TRACKING SYSTEM ===== 1. Add department 2. Adjust department allocation 3. Add transaction 4. Update transaction 5. Delete transaction 6. View financial overview 7. Export transactions to CSV 8. Exit """
+    while True:
+        print(menu)
+        choice = input("Choose an option: ").strip()
+        try:
+            if choice == "1":
+                app.add_department(
+                    input("Department ID: ").strip(),
+                    input("Department name: ").strip(),
+                    read_amount("Allocated budget: ")
+                )
+                print("Department added.")
+            elif choice == "2":
+                app.adjust_department_budget(
+                    input("Department ID: ").strip(),
+                    read_amount("New allocated budget: ")
+                )
+                print("Budget allocation updated.")
+            elif choice == "3":
+                app.add_transaction(
+                    input("Transaction ID: ").strip(),
+                    input("Department ID: ").strip(),
+                    read_amount("Amount: "),
+                    input("Type (credit/debit): ").strip(),
+                    input("Description: ").strip()
+                )
+                print("Transaction added.")
+            elif choice == "4":
+                app.update_transaction(
+                    input("Transaction ID: ").strip(),
+                    read_amount("New amount: "),
+                    input("New type (credit/debit): ").strip(),
+                    input("New description: ").strip()
+                )
+                print("Transaction updated.")
+            elif choice == "5":
+                app.delete_transaction(input("Transaction ID: ").strip())
+                print("Transaction deleted.")
+            elif choice == "6":
+                app.financial_overview()
+            elif choice == "7":
+                app.export_transactions_to_csv()
+            elif choice == "8":
+                print("Goodbye!")
+                break
+            else:
+                print("Choose a number from 1 to 8.")
+        except ValueError as error:
+            print(f"Error: {error}")
+
+
+if __name__ == "__main__":
+    main()
