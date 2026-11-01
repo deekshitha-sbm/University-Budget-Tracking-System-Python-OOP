@@ -1,0 +1,54 @@
+University Budget Tracking System
+
+A menu-driven Python project that manages university department budgets and financial transactions.
+
+
+Features
+
+
+Add departments and allocate budgets.
+
+Record credit and debit transactions.
+
+Update and delete transactions (CRUD).
+
+Calculate department-wise credits, expenses, available funds and budget utilisation.
+
+Save data in budget_data.json so it remains available after restarting.
+
+Export transactions to transactions_export.csv for Excel / Power BI.
+
+
+Requirements
+
+
+Python 3.9 or newer
+
+No external packages required.
+
+
+Run
+
+python budget_tracking_system.py
+
+Example workflow
+
+
+Add department: D01, Computer Science, 100000
+
+Add a debit transaction: T01, D01, 15000, debit, Lab equipment
+
+View financial overview.
+
+Export the transactions to CSV.
+
+
+How the calculation works
+
+Available funds = Allocated budget + Total credits - Total debits
+
+
+Budget utilised (%) = Total debits / Allocated budget * 100
+
+
+In this sample application, a credit means additional funds received and a debit means spending. The project is an educational prototype, not an accounting or financial-control system.
